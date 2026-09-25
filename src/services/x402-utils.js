@@ -30,6 +30,7 @@ const KNOWN_USDC = {
 // Known native assets (non-contract, chain-native currencies)
 const KNOWN_NATIVE_ASSETS = {
   'BTC': { chain: 'Bitcoin' },
+  'XNO': { chain: 'Nano' },
 }
 
 /**
