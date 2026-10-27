@@ -9,6 +9,8 @@ import { pollMppscan } from './aggregators/mppscan.js'
 import { runHealthChecks } from './health/checker.js'
 import { classifyServices } from './services/classify.js'
 import { captureSnapshot } from './services/daily-snapshot.js'
+import db from './db.js'
+import { recordSchedulerEvent } from './services/scheduler-events.js'
 
 let healthCheckRunning = false
 let lastSnapshotDate = null
@@ -78,7 +80,11 @@ function runMppscanPoll() {
 }
 
 function runHealthCheckGuarded() {
-  if (healthCheckRunning) return
+  if (healthCheckRunning) {
+    // A sweep longer than the interval swallows ticks; record each one so the digest shows it.
+    recordSchedulerEvent(db, { job: 'health', event: 'skipped', reason: 'previous-run-active' })
+    return
+  }
   healthCheckRunning = true
   runHealthChecks()
     .then(() => runDailySnapshot())
