@@ -11,6 +11,8 @@ import {
   isKnownUSDC,
   isKnownNativeAsset,
   isLightningEntry,
+  isNanoEntry,
+  isValidNanoAddress,
   extractFacilitatorUrl,
 } from '../src/services/x402-utils.js'
 
@@ -734,5 +736,105 @@ describe('validatePaymentRequirements — Lightning entries', () => {
     // Both should be valid
     assert.equal(result.entries[0].valid, true)
     assert.equal(result.entries[1].valid, true)
+  })
+})
+
+// ─── validatePaymentRequirements — Nano entries ─────────────────────────────
+
+describe('validatePaymentRequirements — Nano entries', () => {
+  // Nano genesis account (well-known, valid checksum)
+  const NANO_ADDR = 'nano_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3'
+  const nanoEntry = {
+    scheme: 'exact',
+    network: 'nano:mainnet',
+    asset: 'XNO',
+    amount: '100000000000000000000000000',
+    payTo: NANO_ADDR,
+    maxTimeoutSeconds: 60,
+  }
+
+  it('accepts XNO on nano:mainnet with a valid nano_ payTo and sets assetKnown', () => {
+    const result = validatePaymentRequirements([nanoEntry])
+    assert.equal(result.valid, true)
+    assert.equal(result.assetKnown, true)
+    assert.equal(result.entries[0].valid, true)
+    assert.equal(result.entries[0].payToValid, true)
+    assert.equal(result.entries[0].assetKnown, true)
+    assert.equal(result.entries[0].assetChain, 'Nano')
+    assert.equal(result.entries[0].hasNetwork, true)
+    assert.equal(result.entries[0].hasAmount, true)
+  })
+
+  it('accepts legacy xrb_ payTo and V1 maxAmountRequired', () => {
+    const { amount, ...v1 } = nanoEntry
+    const entry = { ...v1, maxAmountRequired: amount, payTo: NANO_ADDR.replace('nano_', 'xrb_') }
+    const result = validatePaymentRequirements([entry])
+    assert.equal(result.valid, true)
+    assert.equal(result.assetKnown, true)
+  })
+
+  it('rejects a non-XNO asset on nano:mainnet', () => {
+    const result = validatePaymentRequirements([{ ...nanoEntry, asset: 'NANO' }])
+    assert.equal(result.valid, false)
+    assert.equal(result.assetKnown, false)
+    assert.equal(result.entries[0].valid, false)
+  })
+
+  it('rejects XNO on a non-Nano network', () => {
+    const result = validatePaymentRequirements([{ ...nanoEntry, network: 'eip155:8453' }])
+    assert.equal(result.valid, false)
+    assert.equal(result.entries[0].valid, false)
+  })
+
+  it('rejects XNO with no network', () => {
+    const { network, ...noNetwork } = nanoEntry
+    const result = validatePaymentRequirements([noNetwork])
+    assert.equal(result.valid, false)
+    assert.equal(result.entries[0].hasNetwork, false)
+  })
+
+  it('rejects XNO with an EVM payTo', () => {
+    const result = validatePaymentRequirements([{ ...nanoEntry, payTo: '0x1234567890abcdef1234567890abcdef12345678' }])
+    assert.equal(result.valid, false)
+    assert.equal(result.entries[0].payToValid, false)
+  })
+
+  it('rejects XNO with a malformed nano_ payTo', () => {
+    for (const payTo of [
+      NANO_ADDR.slice(0, -1), // too short
+      NANO_ADDR + '1', // too long
+      NANO_ADDR.slice(0, -1) + '0', // '0' not in Nano base32 alphabet
+      NANO_ADDR.slice(0, -1) + 'l', // 'l' not in Nano base32 alphabet
+      NANO_ADDR.toUpperCase(),
+      'nano_5' + NANO_ADDR.slice(6), // key must start with 1 or 3
+      'ban_' + NANO_ADDR.slice(5),
+    ]) {
+      const result = validatePaymentRequirements([{ ...nanoEntry, payTo }])
+      assert.equal(result.valid, false, payTo)
+      assert.equal(result.entries[0].payToValid, false, payTo)
+    }
+  })
+
+  it('rejects XNO with no amount', () => {
+    const { amount, ...noAmount } = nanoEntry
+    const result = validatePaymentRequirements([noAmount])
+    assert.equal(result.valid, false)
+    assert.equal(result.entries[0].hasAmount, false)
+  })
+})
+
+describe('isNanoEntry / isValidNanoAddress', () => {
+  it('isNanoEntry matches XNO case-insensitively and nothing else', () => {
+    assert.equal(isNanoEntry({ asset: 'XNO' }), true)
+    assert.equal(isNanoEntry({ asset: 'xno' }), true)
+    assert.equal(isNanoEntry({ asset: 'BTC' }), false)
+    assert.equal(isNanoEntry({}), false)
+    assert.equal(isNanoEntry(null), false)
+  })
+
+  it('isValidNanoAddress rejects non-strings', () => {
+    assert.equal(isValidNanoAddress(null), false)
+    assert.equal(isValidNanoAddress(12345), false)
+    assert.equal(isValidNanoAddress(''), false)
   })
 })

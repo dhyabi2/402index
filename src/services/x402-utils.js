@@ -54,6 +54,32 @@ export function isLightningEntry(entry) {
          entry?.extra?.paymentMethod === 'lightning'
 }
 
+// Nano networks accepted for XNO entries (x402 Nano uses `nano:<network>`)
+const NANO_NETWORKS = new Set(['nano:mainnet'])
+
+/**
+ * Check if an x402 accepts entry is a Nano payment (asset XNO).
+ * @param {object} entry - An accepts array entry
+ * @returns {boolean}
+ */
+export function isNanoEntry(entry) {
+  return typeof entry?.asset === 'string' && entry.asset.toUpperCase() === 'XNO'
+}
+
+/**
+ * Check if a Nano address is valid format.
+ * `nano_` (60 chars) or legacy `xrb_` (61 chars) prefix, followed by a
+ * 52-char public key (first char 1 or 3, since the 256-bit key is padded to
+ * 260 bits) and an 8-char checksum, all in Nano's base32 alphabet.
+ * The checksum itself is not verified.
+ * @param {string} address
+ * @returns {boolean}
+ */
+export function isValidNanoAddress(address) {
+  if (!address || typeof address !== 'string') return false
+  return /^(?:nano|xrb)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}$/.test(address)
+}
+
 /**
  * Parse the PAYMENT-REQUIRED header from an x402 402 response.
  * The header value is a base64-encoded JSON string.
@@ -259,6 +285,30 @@ export function validatePaymentRequirements(accepts) {
       result.facilitatorUrl = extractFacilitatorUrl(entry)
       if (result.facilitatorUrl) facilitatorUrls.push(result.facilitatorUrl)
       result.valid = result.hasPayTo && result.payToValid && result.hasAsset && result.assetValid && result.hasAmount
+      if (result.valid) anyValid = true
+      entries.push(result)
+      continue
+    }
+
+    // Nano x402: XNO on a nano: network, payTo must be a Nano address
+    if (isNanoEntry(entry)) {
+      result.hasPayTo = !!entry.payTo
+      result.payToValid = isValidNanoAddress(entry.payTo)
+      result.hasAsset = true
+      result.assetValid = true
+      const nativeCheck = isKnownNativeAsset(entry.asset)
+      result.assetKnown = nativeCheck.known
+      result.assetChain = nativeCheck.chain
+      if (nativeCheck.known) anyAssetKnown = true
+      if (entry.network) result.hasNetwork = true
+      const networkValid = NANO_NETWORKS.has(entry.network)
+      if ((entry.maxAmountRequired != null && entry.maxAmountRequired !== '') ||
+          (entry.amount != null && entry.amount !== '')) {
+        result.hasAmount = true
+      }
+      result.facilitatorUrl = extractFacilitatorUrl(entry)
+      if (result.facilitatorUrl) facilitatorUrls.push(result.facilitatorUrl)
+      result.valid = result.hasPayTo && result.payToValid && result.hasAsset && result.assetValid && networkValid && result.hasAmount
       if (result.valid) anyValid = true
       entries.push(result)
       continue
